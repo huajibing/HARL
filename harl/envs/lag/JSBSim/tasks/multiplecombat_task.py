@@ -32,8 +32,37 @@ class MultipleCombatTask(SingleCombatTask):
 
     @property
     def num_agents(self) -> int:
-        # return 4 if not self.use_baseline else 2
-        return 2
+        if hasattr(self.config, 'aircraft_configs'):
+            num_configured_agents = len(self.config.aircraft_configs)
+            
+            is_vs_baseline = False
+            if hasattr(self.config, 'task') and isinstance(self.config.task, str):
+                if 'vsBaseline' in self.config.task:
+                    is_vs_baseline = True
+            
+            if is_vs_baseline:
+                if num_configured_agents > 0:
+                    # In NvN vsBaseline, N agents are RL and N are baseline.
+                    return num_configured_agents // 2
+                else:
+                    # Fallback for vsBaseline if aircraft_configs is empty for some reason
+                    return 1 
+            else:
+                # For non-vsBaseline (e.g., Selfplay), all configured agents are RL-controlled
+                return num_configured_agents
+        else:
+            # Fallback if aircraft_configs is somehow missing
+            # Try to infer from task name like "2v2" if possible, otherwise default
+            if hasattr(self.config, 'task') and isinstance(self.config.task, str):
+                # Simplistic inference based on common patterns if aircraft_configs is missing
+                if self.config.task.lower().startswith("2v2"):
+                    # This assumes all 4 are RL if not vsBaseline, or 2 RL if vsBaseline
+                    return 4 if 'vsBaseline' not in self.config.task else 2
+                elif self.config.task.lower().startswith("1v1"):
+                    # This assumes all 2 are RL if not vsBaseline, or 1 RL if vsBaseline
+                    return 2 if 'vsBaseline' not in self.config.task else 1
+            # Absolute fallback, though this state indicates a deeper config issue
+            return 2
 
     def load_variables(self):
         self.state_var = [
@@ -72,7 +101,7 @@ class MultipleCombatTask(SingleCombatTask):
     def load_observation_space(self):
         self.obs_length = 9 + (self.num_agents - 1 + 2) * 6  # modified
         self.observation_space = spaces.Box(low=-10, high=10., shape=(self.obs_length,))
-        self.share_observation_space = spaces.Box(low=-10, high=10., shape=((self.num_agents + 2) * self.obs_length,))
+        self.share_observation_space = spaces.Box(low=-10, high=10., shape=(self.num_agents * self.obs_length,))
 
     def load_action_space(self):
         # aileron, elevator, rudder, throttle
