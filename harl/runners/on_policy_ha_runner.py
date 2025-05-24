@@ -48,6 +48,7 @@ class OnPolicyHARunner(OnPolicyBaseRunner):
             agent_order = list(range(self.num_agents))
         else:
             agent_order = list(torch.randperm(self.num_agents).numpy())
+        
         for agent_id in agent_order:
             self.actor_buffer[agent_id].update_factor(
                 factor
