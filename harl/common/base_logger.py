@@ -3,6 +3,7 @@
 import time
 import os
 import numpy as np
+import threading
 
 
 class BaseLogger:
@@ -22,6 +23,7 @@ class BaseLogger:
         self.log_file = open(
             os.path.join(run_dir, "progress.txt"), "w", encoding="utf-8"
         )
+        self.tb_lock = threading.Lock()
 
     def get_task_name(self):
         """Get the task name."""
@@ -103,11 +105,12 @@ class BaseLogger:
                     aver_episode_rewards
                 )
             )
-            self.writter.add_scalars(
-                "train_episode_rewards",
-                {"aver_rewards": aver_episode_rewards},
-                self.total_num_steps,
-            )
+            with self.tb_lock:
+                self.writter.add_scalars(
+                    "train_episode_rewards",
+                    {"aver_rewards": aver_episode_rewards},
+                    self.total_num_steps,
+                )
             self.done_episodes_rewards = []
 
     def eval_init(self):
@@ -167,18 +170,33 @@ class BaseLogger:
         for agent_id in range(self.num_agents):
             for k, v in actor_train_infos[agent_id].items():
                 agent_k = "agent%i/" % agent_id + k
-                self.writter.add_scalars(agent_k, {agent_k: v}, self.total_num_steps)
+                with self.tb_lock:
+                    self.writter.add_scalars(agent_k, {agent_k: v}, self.total_num_steps)
         # log critic
         for k, v in critic_train_info.items():
             critic_k = "critic/" + k
-            self.writter.add_scalars(critic_k, {critic_k: v}, self.total_num_steps)
+            with self.tb_lock:
+                self.writter.add_scalars(critic_k, {critic_k: v}, self.total_num_steps)
 
     def log_env(self, env_infos):
         """Log environment information."""
         for k, v in env_infos.items():
             if len(v) > 0:
-                self.writter.add_scalars(k, {k: np.mean(v)}, self.total_num_steps)
+                with self.tb_lock:
+                    self.writter.add_scalars(k, {k: np.mean(v)}, self.total_num_steps)
 
     def close(self):
         """Close the logger."""
+        # Note: export_scalars_to_json is not explicitly called here,
+        # but if it were, it should also be locked.
+        # Assuming writter.close() handles flushing and closing.
+        # If writter has other methods that write, they need locking too.
+        with self.tb_lock:
+            # If self.writter.close() involves writing operations or
+            # calls methods like export_scalars_to_json, it should be protected.
+            if hasattr(self.writter, 'export_scalars_to_json'):
+                 self.writter.export_scalars_to_json(os.path.join(self.run_dir, "all_scalars.json"))
+            # Assuming self.writter might have a close method that needs protection
+            if hasattr(self.writter, 'close'):
+                self.writter.close()
         self.log_file.close()
